@@ -1,0 +1,8 @@
+model_list:
+  - model_name: nvidia-model
+    litellm_params:
+      # Replace this with the exact model identifier from the NVIDIA catalog
+      model: nvidia_nim/openai/gpt-oss-20b
+      api_base: https://integrate.api.nvidia.com/v1
+      api_key: os.environ/NVIDIA_API_KEY
+      drop_params: true
