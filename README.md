@@ -71,6 +71,32 @@ Edit `model:` in [config/nvidiaAPI/litellm_config.yaml](config/nvidiaAPI/litellm
 
 Codex reads `.codex/config.toml` from the project you run it in. To use the proxy elsewhere, start it (`pipenv run litellm --config config/nvidiaAPI/litellm_config.yaml --port 4000` from this repo), copy [.codex/config.toml](.codex/config.toml) into your project, and run `codex` there. Set `NVIDIA_API_KEY` to any value in that shell. The proxy holds the real key.
 
+### Codex model catalog
+
+Codex only knows its built-in OpenAI models, so a custom model such as `nvidia-model` needs an entry in a model catalog. [.codex/config.toml](.codex/config.toml) points at one with `model_catalog_json = "model_catalog.json"`, and [.codex/model_catalog.json](.codex/model_catalog.json) defines the `nvidia-model` entry:
+
+- `slug` must match `model` in `config.toml` and `model_name` in `litellm_config.yaml` (`nvidia-model`).
+- `context_window` / `max_context_window` (131072) should match the context length of the NVIDIA model you chose. Lower them if the model has a smaller window.
+- `supported_reasoning_levels`, `shell_type`, `apply_patch_tool_type` and the other fields tell Codex which features to use. Adjust them if your model handles tools or reasoning differently.
+- `base_instructions` is the system prompt Codex sends.
+
+If you copy `.codex/config.toml` into another project, copy `model_catalog.json` next to it.
+
+### Claude Code settings in the PowerShell launcher
+
+[launch-claude.ps1](config/nvidiaAPI/launch-claude.ps1) configures Claude Code in `Set-ClaudeCodeEnvironment`. The variables are set only for the launcher's process:
+
+| Variable | Value | Purpose |
+|---|---|---|
+| `ANTHROPIC_BASE_URL` | `http://localhost:4000` | Sends requests to the local proxy instead of Anthropic. |
+| `ANTHROPIC_AUTH_TOKEN` | `anything` | Placeholder. The proxy holds the real NVIDIA key. `ANTHROPIC_API_KEY` is removed so it can't take over. |
+| `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL` | `nvidia-model` | Main and background model. |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL`, `..._SONNET_MODEL`, `..._HAIKU_MODEL` | `nvidia-model` | Maps every Claude model tier to the proxy alias. |
+| `CLAUDE_CODE_MAX_CONTEXT_TOKENS` | `131072` | Context size Claude Code assumes. Match it to your model. |
+| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `1` | Skips telemetry and update checks. |
+
+To change the port, edit `$port` at the top of the script. It is used for both the proxy and `ANTHROPIC_BASE_URL`.
+
 ## How it works
 
 - **Codex** is configured in [.codex/config.toml](.codex/config.toml) with a custom provider that points at `http://localhost:4000` and uses the Responses API (`wire_api = "responses"`).
