@@ -1,32 +1,59 @@
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $envPath = Join-Path $repoRoot ".env"
+$configPath = Join-Path $repoRoot "config\nvidiaAPI\litellm_config.yaml"
+$port = 4000
+$proxy = $null
 
-Write-Host "[1/3] Loading NVIDIA_API_KEY from .env..." -ForegroundColor Cyan
-if (-not $env:NVIDIA_API_KEY) {
-    if (-not (Test-Path $envPath)) {
-        throw ".env file not found at $envPath"
-    }
+function Import-NvidiaApiKey {
+    Write-Host "[1/3] Loading NVIDIA_API_KEY from .env..." -ForegroundColor Cyan
+    if ($env:NVIDIA_API_KEY) { return }
+    if (-not (Test-Path $envPath)) { throw ".env file not found at $envPath" }
+
     $line = Get-Content $envPath | Where-Object { $_ -match '^\s*NVIDIA_API_KEY\s*=' } | Select-Object -First 1
-    if (-not $line) {
-        throw "NVIDIA_API_KEY not found in $envPath"
+    if (-not $line) { throw "NVIDIA_API_KEY not found in $envPath" }
+
+    $value = ($line -split '=', 2)[1].Trim()
+    if (($value.StartsWith('"') -and $value.EndsWith('"')) -or
+        ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+        $value = $value.Substring(1, $value.Length - 2)
     }
-    $env:NVIDIA_API_KEY = ($line -split '=', 2)[1].Trim().Trim('"')
+    if (-not $value) { throw "NVIDIA_API_KEY is empty in $envPath" }
+    $env:NVIDIA_API_KEY = $value
 }
 
-Write-Host "[2/3] Starting litellm proxy on port 4000..." -ForegroundColor Cyan
-# Launch the proxy in its own window so it keeps running while codex is used
-$configPath = Join-Path $repoRoot "config\nvidiaAPI\litellm_config.yaml"
-$proxy = Start-Process pipenv -ArgumentList "run", "litellm", "--config", $configPath, "--port", "4000" -PassThru -WindowStyle Normal
+function Start-LiteLLMProxy {
+    Write-Host "[2/3] Starting litellm proxy on port $port..." -ForegroundColor Cyan
+    Start-Process pipenv -ArgumentList "run", "litellm", "--config", $configPath, "--port", $port `
+        -WorkingDirectory $repoRoot -PassThru -WindowStyle Normal
+}
 
-# Give the proxy a few seconds to bind before codex tries to connect
-Start-Sleep -Seconds 5
+function Wait-ForProxy {
+    $healthUrl = "http://localhost:$port/health/liveliness"
+    $deadline = (Get-Date).AddSeconds(120)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 15 | Out-Null
+            return
+        } catch { Start-Sleep -Seconds 1 }
+    }
+    Write-Warning "Proxy did not answer on $healthUrl within 120s; continuing anyway."
+}
 
-Write-Host "[3/3] Launching codex! (Type 'exit' or close the window to stop)" -ForegroundColor Green
-Write-Host "-----------------------------------------------------------"
-codex
+function Stop-LiteLLMProxy {
+    if ($proxy -and -not $proxy.HasExited) {
+        & "$env:SystemRoot\System32\taskkill.exe" /PID $proxy.Id /T /F | Out-Null
+    }
+}
 
-Write-Host "-----------------------------------------------------------"
-Write-Host "[Clean-up] Stopping litellm proxy..." -ForegroundColor Yellow
-if ($proxy -and -not $proxy.HasExited) {
-    Stop-Process -Id $proxy.Id -Force
+Import-NvidiaApiKey
+$proxy = Start-LiteLLMProxy
+try {
+    Wait-ForProxy
+    Write-Host "[3/3] Launching Codex! (exit Codex to stop the proxy)" -ForegroundColor Green
+    Write-Host "-----------------------------------------------------------"
+    codex @args
+} finally {
+    Write-Host "-----------------------------------------------------------"
+    Write-Host "[Clean-up] Stopping litellm proxy..." -ForegroundColor Yellow
+    Stop-LiteLLMProxy
 }
