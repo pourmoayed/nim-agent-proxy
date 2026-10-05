@@ -45,31 +45,26 @@ cp .env.example .env
 
 Each launcher loads the selected provider's key, starts its proxy on a provider-specific port, waits until it answers, starts the agent, and stops the proxy when the agent exits. Extra arguments are passed to the agent.
 
-**Codex CLI with NVIDIA NIM**
+Run these commands yourself in a terminal, from the repository root (the `nim-agent-proxy` folder). The agent opens in that same terminal, and the proxy stops when you exit it.
 
-```powershell
-.\config\nvidiaAPI\launch-codex.ps1          # Windows
-```
-```bash
-bash ./config/nvidiaAPI/launch-codex.sh       # Linux / macOS
-```
-
-**Claude Code with NVIDIA NIM**
-
-```powershell
-.\config\nvidiaAPI\launch-claude.ps1         # Windows
-```
-```bash
-bash ./config/nvidiaAPI/launch-claude.sh      # Linux / macOS
-```
+| Agent | Windows (PowerShell) | Linux / macOS (Bash) |
+|---|---|---|
+| Codex CLI | `.\config\nvidiaAPI\launch-codex.ps1` | `bash ./config/nvidiaAPI/launch-codex.sh` |
+| Claude Code | `.\config\nvidiaAPI\launch-claude.ps1` | `bash ./config/nvidiaAPI/launch-claude.sh` |
 
 ### Choosing a model
 
 Edit `model:` in [config/nvidiaAPI/litellm_config.yaml](config/nvidiaAPI/litellm_config.yaml) to a model ID from the [NVIDIA catalog](https://build.nvidia.com), prefixed with `nvidia_nim/`. Choose a model that supports tool calling, and restart the launcher after changing it.
 
-### Using Codex in your own projects
+**Tested models.** These worked with both Claude Code and Codex when this project was tested. NVIDIA changes its catalog often, so availability and speed may differ later.
 
-Codex reads `.codex/config.toml` from the project you run it in. To use the proxy elsewhere, start it (`pipenv run litellm --config config/nvidiaAPI/litellm_config.yaml --port 4000` from this repo), copy [.codex/config.toml](.codex/config.toml) into your project, and run `codex` there. Set `NVIDIA_API_KEY` to any value in that shell. The proxy holds the real key.
+| Model | Notes |
+|---|---|
+| `nvidia/nemotron-3-ultra-550b-a55b` | Fast in Claude Code and works in Codex. |
+| `nvidia/nemotron-3-super-120b-a12b` | Fast in Claude Code and works in Codex. |
+| `openai/gpt-oss-20b` | Works in Claude Code and Codex. |
+
+For example: `model: nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b`.
 
 ### Codex model catalog
 
@@ -101,7 +96,7 @@ To change the port, edit `$port` at the top of the script. It is used for both t
 
 - **Codex** is configured in [.codex/config.toml](.codex/config.toml) with a custom provider that points at `http://localhost:4000` and uses the Responses API (`wire_api = "responses"`).
 - **Claude Code** is pointed at the proxy with environment variables set by the launcher: `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_MODEL` and `ANTHROPIC_SMALL_FAST_MODEL`. They exist only in the launcher's process.
-- **LiteLLM** receives the requests, maps the local model alias to the provider model configured in the matching config under `config/`, and forwards them with that provider's real key. `drop_params: true` removes unsupported request parameters.
+- **LiteLLM** receives the requests, maps the local model alias to the provider model configured in the matching config under `config/`, and forwards them with that provider's real key. `drop_params: true` removes unsupported request parameters it knows about, and `additional_drop_params` removes extra fields by name (Codex's `client_metadata`).
 - The proxy listens only on your machine. Your NVIDIA key is read from `.env` (or the environment) and is never written into any config file.
 
 ## Troubleshooting
@@ -113,6 +108,7 @@ To change the port, edit `$port` at the top of the script. It is used for both t
 | Agent says the model is not found | `litellm_config.yaml` must keep `model_name: nvidia-model`, which the agents request. |
 | 401 / 403 from NVIDIA | The API key is invalid or expired. |
 | 429 from NVIDIA | You hit the free-tier rate limit. Wait, or choose another model. |
+| Codex: `400 ... Unsupported parameter(s): client_metadata` | NIM rejects a field Codex adds to each request. `litellm_config.yaml` strips it with `additional_drop_params: ["client_metadata"]`. If NIM rejects another field, add its name to that list and restart. |
 | Agent loops or ignores tools | The model's tool calling is weak. Try a larger model. |
 
 ## License
