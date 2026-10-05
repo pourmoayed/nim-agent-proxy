@@ -6,3 +6,4 @@ model_list:
       api_base: https://integrate.api.nvidia.com/v1
       api_key: os.environ/NVIDIA_API_KEY
       drop_params: true
+      additional_drop_params: ["client_metadata"]
